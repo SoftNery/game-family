@@ -62,6 +62,35 @@ A "risada" do bebê é um motivo saltitante de propósito: síntese simples não
 imita voz humana sem soar robótica, então ela virou um efeito de molecagem em
 vez de uma voz falsa.
 
+### Vozes da família
+
+Além da síntese, o jogo toca clipes gravados de verdade. Ficam em `audio/` e
+são declarados na lista `VOZES`, no topo do [audio.js](audio.js).
+
+**Para adicionar um clipe novo:** jogue o arquivo em `audio/` e escreva uma
+linha na lista, dizendo em que momento ele entra. O `Dockerfile` copia a pasta
+inteira, então não precisa mexer em nada do deploy.
+
+```js
+{ id: 'bronca', arquivo: 'audio/nome-do-arquivo.m4a',
+  evento: 'derrota', chance: 1, cooldown: 9, volume: 1 },
+```
+
+Momentos disponíveis (todos já chamados pelo jogo, basta ter clipe):
+`inicio`, `pegada`, `dano`, `vitoria`, `derrota`, `fuga`. Se houver mais de um
+clipe para o mesmo momento, o jogo sorteia entre eles.
+
+Enquanto alguém fala, a música abaixa sozinha, e duas falas nunca se
+atropelam. O botão de mudo cala as vozes junto.
+
+**Formato:** prefira **.m4a** ou **.mp3**. O campo `arquivo` também aceita uma
+lista em ordem de preferência — o jogo usa o primeiro formato que o navegador
+tocar e, se o arquivo não existir, cai sozinho para o próximo. Isso permite
+manter um `.m4a` para iPhone antigo e um `.ogg` para o resto, no mesmo clipe.
+
+> iPhone e iPad com iOS 16 ou anterior **não tocam .ogg**. Nesses aparelhos o
+> jogo simplesmente segue sem a voz, sem quebrar nada.
+
 ## Rodando na sua máquina
 
 Qualquer servidor estático serve:

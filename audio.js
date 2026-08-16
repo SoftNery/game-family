@@ -14,7 +14,42 @@ const AUDIO_CFG = {
   MUSIC: 0.22,
   BPM: 132,
   STORE_KEY: 'pegaobebe.mudo',
+  VOZ_VOLUME: 1,
+  MUSICA_ABAFADA: 0.3,       // quanto sobra da música enquanto alguém fala
+  VOZ_TIMEOUT: 20,           // trava de segurança para desabafar a música
 };
+
+/* ---------------------------------------------------------------------------
+   VOZES — clipes gravados de verdade (a família dublando o jogo).
+   Para adicionar um novo: jogue o arquivo em audio/ e escreva uma linha aqui.
+   O Dockerfile já copia a pasta inteira, então não precisa mexer no deploy.
+
+   evento .... em que momento do jogo ele pode entrar
+   chance .... probabilidade de tocar quando o evento acontece (0 a 1)
+   cooldown .. segundos mínimos entre duas execuções do mesmo clipe
+   Se dois clipes servem ao mesmo evento, o jogo sorteia entre os disponíveis.
+
+   Momentos disponíveis hoje (todos já chamados pelo jogo, é só ter clipe):
+     'inicio'  — começou a partida
+     'pegada'  — segurou o bebê e ele ainda vai escapulir
+     'dano'    — levou objeto na cabeça ou tropeçou
+     'vitoria' — pegada final, o abraço
+     'derrota' — acabaram as vidas
+     'fuga'    — o bebê completou o circuito
+--------------------------------------------------------------------------- */
+const VOZES = [
+  {
+    id: 'reclamando',
+    // lista em ordem de preferência: iPhone antigo não toca .ogg, então basta
+    // colocar um .m4a com o mesmo nome que ele passa a ser usado lá
+    arquivo: ['audio/mae-reclamndo-com-filho-01.m4a',
+              'audio/mae-reclamndo-com-filho-01.ogg'],
+    evento: 'pegada',
+    chance: 1,
+    cooldown: 9,             // o clipe tem ~6s: evita falar por cima de si mesmo
+    volume: 1,
+  },
+];
 
 /** Semitons a partir de dó, por passo de colcheia. null = silêncio. */
 const MELODIA = [
@@ -42,6 +77,102 @@ class AudioKit {
     this.tocandoMusica = false;
     this.muted = this.lerPreferencia();
     this.pronto = false;
+    this.vozes = [];
+    this.vozTocando = null;
+    this.vozTimeout = null;
+    this.carregarVozes();
+  }
+
+  /* ---------------- vozes gravadas ---------------- */
+
+  /**
+   * Os clipes usam <audio> comum em vez de decodeAudioData de propósito:
+   * decodificar exigiria fetch, que o navegador bloqueia em file://, e aí o
+   * jogo pararia de funcionar ao abrir o index.html com dois cliques.
+   */
+  carregarVozes() {
+    const teste = document.createElement('audio');
+    const tipoDe = (caminho) =>
+      caminho.endsWith('.ogg') || caminho.endsWith('.opus') ? 'audio/ogg; codecs=opus'
+      : caminho.endsWith('.m4a') || caminho.endsWith('.aac') ? 'audio/mp4; codecs=mp4a.40.2'
+      : caminho.endsWith('.wav') ? 'audio/wav'
+      : caminho.endsWith('.webm') ? 'audio/webm; codecs=opus' : 'audio/mpeg';
+
+    for (const v of VOZES) {
+      // "arquivo" aceita uma lista em ordem de preferência. Descarta o que o
+      // navegador não sabe tocar e, se o arquivo simplesmente não existir,
+      // cai para o próximo — canPlayType só conhece formato, não sabe se o
+      // arquivo está lá.
+      const opcoes = (Array.isArray(v.arquivo) ? v.arquivo : [v.arquivo])
+        .filter((c) => !teste.canPlayType || teste.canPlayType(tipoDe(c)));
+      if (!opcoes.length) continue;             // nenhum formato suportado aqui
+
+      const reg = { def: v, el: new Audio(), ultimaVez: -999, falhou: false, idx: 0 };
+      const tentarProximo = () => {
+        if (reg.idx >= opcoes.length) { reg.falhou = true; return; }
+        reg.el.src = opcoes[reg.idx++];
+        reg.el.load();
+      };
+      reg.el.preload = 'auto';
+      reg.el.addEventListener('ended', () => this.encerrarVoz(reg.el));
+      reg.el.addEventListener('error', () => { this.encerrarVoz(reg.el); tentarProximo(); });
+      tentarProximo();
+      this.vozes.push(reg);
+    }
+  }
+
+  /** Relógio próprio, para o cooldown não depender de quem chama. */
+  agora() {
+    return this.ctx ? this.ctx.currentTime : performance.now() / 1000;
+  }
+
+  /** Dispara uma fala, se houver clipe para o momento e ele não estiver quente. */
+  voz(evento) {
+    if (this.muted || this.vozTocando) return;
+    const t = this.agora();
+    const aptos = this.vozes.filter((v) =>
+      v.def.evento === evento && !v.falhou && t - v.ultimaVez >= v.def.cooldown);
+    if (!aptos.length) return;
+    const escolhido = aptos[Math.floor(Math.random() * aptos.length)];
+    if (Math.random() > (escolhido.def.chance == null ? 1 : escolhido.def.chance)) return;
+
+    escolhido.ultimaVez = t;
+    const el = escolhido.el;
+    el.volume = (escolhido.def.volume == null ? 1 : escolhido.def.volume) * AUDIO_CFG.VOZ_VOLUME;
+    try { el.currentTime = 0; } catch (e) { /* stream sem duração: toca de onde estiver */ }
+    const p = el.play();
+    if (p && p.catch) p.catch(() => { escolhido.falhou = true; this.encerrarVoz(el); });
+
+    this.vozTocando = el;
+    this.abafarMusica(true);
+    // a duração desses arquivos costuma vir Infinity (gravação de celular),
+    // então não dá para confiar nela: trava de segurança por tempo
+    clearTimeout(this.vozTimeout);
+    this.vozTimeout = setTimeout(() => this.encerrarVoz(el), AUDIO_CFG.VOZ_TIMEOUT * 1000);
+  }
+
+  encerrarVoz(el) {
+    if (this.vozTocando !== el) return;
+    this.vozTocando = null;
+    clearTimeout(this.vozTimeout);
+    this.abafarMusica(false);
+  }
+
+  /** Silencia qualquer fala em andamento (troca de tela, reinício). */
+  pararVozes() {
+    for (const v of this.vozes) {
+      try { v.el.pause(); v.el.currentTime = 0; } catch (e) { /* ignora */ }
+    }
+    this.vozTocando = null;
+    clearTimeout(this.vozTimeout);
+    this.abafarMusica(false);
+  }
+
+  /** Baixa a música enquanto alguém fala, para a voz aparecer. */
+  abafarMusica(abafar) {
+    if (!this.pronto || !this.musicBus) return;
+    const alvo = AUDIO_CFG.MUSIC * (abafar ? AUDIO_CFG.MUSICA_ABAFADA : 1);
+    this.musicBus.gain.setTargetAtTime(alvo, this.ctx.currentTime, 0.12);
   }
 
   /* ---------------- preferência de mudo ---------------- */
@@ -94,6 +225,7 @@ class AudioKit {
   setMuted(v) {
     this.muted = v;
     this.salvarPreferencia();
+    if (v) this.pararVozes();   // as falas são <audio>, fora do master gain
     if (this.master) {
       const t = this.ctx.currentTime;
       this.master.gain.cancelScheduledValues(t);

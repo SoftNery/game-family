@@ -656,6 +656,7 @@ class Player {
     }
     effects.clarao('255,90,110', 0.55);
     effects.sacudir(type === 'trip' ? 11 : 8);
+    audio.voz('dano');
     // um tropeço interrompe o pulo
     if (type === 'trip') { this.y = CFG.GROUND_Y; this.vy = 0; this.onGround = true; }
     return true;
@@ -1157,7 +1158,9 @@ class Game {
     this.state = STATE.PLAY;
     this.last = performance.now();
     audio.unlock();
+    audio.pararVozes();       // não deixa fala da partida anterior vazar
     audio.iniciarMusica();
+    audio.voz('inicio');
   }
 
   toMenu() {
@@ -1168,6 +1171,7 @@ class Game {
     this.camera.reset();
     this.projectiles = [];
     audio.pararMusica();
+    audio.pararVozes();
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('touch').classList.add('hidden');
     this.showScreen('scStart');
@@ -1216,6 +1220,7 @@ class Game {
     this.input.reset();
     this.updateHud();
     audio.pegadaParcial();
+    audio.voz('pegada');   // a mãe reclama com o danado
   }
 
   /** Ele escapole, dispara na frente e a correria recomeça. */
@@ -1261,6 +1266,7 @@ class Game {
     this.baby.anim.play('caught', true);
     this.input.reset();
     audio.vitoria();
+    audio.voz('vitoria');
   }
 
   endTired() {
@@ -1272,6 +1278,7 @@ class Game {
     this.player.anim.play('tired', true);
     this.input.reset();
     audio.derrota();
+    audio.voz('derrota');
   }
 
   endEscape() {
@@ -1285,6 +1292,7 @@ class Game {
     this.camera.locked = true;
     this.input.reset();
     audio.derrota();
+    audio.voz('fuga');
   }
 
   showWin() {

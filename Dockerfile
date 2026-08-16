@@ -8,6 +8,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # arquivos do jogo
 COPY index.html style.css game.js audio.js /usr/share/nginx/html/
 COPY img/ /usr/share/nginx/html/img/
+# pasta inteira: clipes novos entram no deploy sem mexer aqui
+COPY audio/ /usr/share/nginx/html/audio/
 
 EXPOSE 80
 
