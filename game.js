@@ -66,6 +66,13 @@ const CFG = {
   ESCAPE_SPEEDUP: 1.03,      // fica um pouquinho mais rápido a cada fuga
   GRAB_BEAT: 0.75,           // tempo preso no colo antes de escapar
   ESCAPE_INVULN: 1.2,        // respiro para a mãe logo após a fuga
+  // Ele ganha a dianteira correndo, não teletransportado: some do colo e
+  // reaparecer 450px à frente dava um corte feio na tela
+  ESCAPE_DASH_SPEED: 520,    // pique extra da arrancada
+  ESCAPE_DASH_MAX: 1.8,      // trava de segurança para a arrancada acabar
+  CATCH_LOCK: 1.1,           // sem pegar de novo no susto, logo após a fuga
+  GRAB_HOLD_OFFSET: 34,      // onde ele fica enquanto está no colo
+  GRAB_FADE: 0.18,           // sumiço suave antes do abraço combinado
   MOM_START_X: 170,
   BABY_START_X: 620,
   CAM_OFFSET: 0.26,          // posição da mãe na tela (fração da largura)
@@ -750,6 +757,8 @@ class Baby {
     this.tripCooldown = CFG.BABY_TRIP_FIRST;
     this.speedMul = 1;          // sobe a cada fuga
     this.semSerPego = 0;        // tempo correndo solto, alimenta o cansaço
+    this.dash = 0;              // arrancada logo depois de escapulir
+    this.alpha = 1;
     this.released = false;
     this.anim = new Animation(BABY_ANIMS);
     this.anim.play('run');
@@ -821,6 +830,14 @@ class Baby {
       }
     }
     let speed = CFG.BABY_SPEED * this.speedFactor() * this.speedMul * freio;
+
+    // arrancada da fuga: corre feito foguete até abrir a dianteira, e para
+    // no momento em que a alcança (assim a distância final não vira loteria)
+    if (this.dash > 0) {
+      this.dash -= dt;
+      if (gap >= CFG.ESCAPE_GAP) this.dash = 0;
+      else speed += CFG.ESCAPE_DASH_SPEED;
+    }
     this.x += speed * dt;
 
     this.anim.update(dt);
@@ -854,7 +871,9 @@ class Baby {
 
   draw(ctx) {
     if (this.hidden) return;
+    if (this.alpha < 1) ctx.globalAlpha = Math.max(0, this.alpha);
     this.anim.draw(ctx, this.x, this.y, false);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1000,6 +1019,8 @@ class Game {
     this.endTimer = 0;
     this.endPhase = 0;
     this.grabTimer = 0;
+    this.grabFromX = 0;
+    this.catchLock = 0;
     this.catches = 0;
     this.inRange = false;
     this.hud = {
@@ -1149,6 +1170,7 @@ class Game {
     this.endTimer = 0;
     this.endPhase = 0;
     this.grabTimer = 0;
+    this.catchLock = 0;
     this.catches = 0;
     this.hudCache = { lives: -1, room: -1, ready: null, catches: -1 };
     document.getElementById('hud').classList.remove('hidden');
@@ -1212,6 +1234,7 @@ class Game {
 
     this.state = STATE.GRABBED;
     this.grabTimer = CFG.GRAB_BEAT;
+    this.grabFromX = this.baby.x;    // vai deslizar até o colo, sem pular
     this.inRange = false;
     this.player.frozen = true;
     this.player.anim.play('idle', true);
@@ -1226,7 +1249,9 @@ class Game {
   /** Ele escapole, dispara na frente e a correria recomeça. */
   soltarBebe() {
     const b = this.baby;
-    b.x = Math.min(this.player.x + CFG.ESCAPE_GAP, FINISH_X - 80);
+    b.dash = CFG.ESCAPE_DASH_MAX;    // abre a dianteira correndo, sem teleporte
+    b.alpha = 1;
+    this.catchLock = CFG.CATCH_LOCK; // ele sai do colo coladinho: trava o "pegar"
     b.speedMul *= CFG.ESCAPE_SPEEDUP;
     b.semSerPego = 0;          // pegou: ele recupera o pique e o cansaço zera
     b.frozen = false;
@@ -1251,12 +1276,22 @@ class Game {
     this.player.anim.update(dt);
     this.baby.anim.update(dt);
     this.grabTimer -= dt;
+    this.deslizarParaOColo(CFG.GRAB_BEAT, this.grabTimer);
     if (this.grabTimer <= 0) this.soltarBebe();
+  }
+
+  /** Leva o bebê até os braços da mãe durante a pegada, em vez de saltar. */
+  deslizarParaOColo(duracao, restante) {
+    const k = clamp(1 - restante / duracao, 0, 1);
+    const suave = k * k * (3 - 2 * k);              // acelera e desacelera
+    const alvo = this.player.x + CFG.GRAB_HOLD_OFFSET;
+    this.baby.x = this.grabFromX + (alvo - this.grabFromX) * suave;
   }
 
   endCatch() {
     this.freezeHud();
     this.state = STATE.END_CATCH;
+    this.grabFromX = this.baby.x;
     this.endPhase = 0;
     this.endTimer = CFG.CATCH_GRAB_TIME;
     this.camera.locked = true;
@@ -1391,8 +1426,10 @@ class Game {
     this.projectiles = this.projectiles.filter((pr) => !pr.dead);
 
     // ------- pegar -------
+    if (this.catchLock > 0) this.catchLock -= dt;
     const jaEstava = this.inRange;
-    this.inRange = Math.abs(b.x - p.x) <= CFG.CATCH_RANGE && p.stun <= 0;
+    this.inRange = Math.abs(b.x - p.x) <= CFG.CATCH_RANGE && p.stun <= 0
+                   && this.catchLock <= 0;
     if (this.inRange && !jaEstava) audio.aoAlcance();
     if (this.input.consumeCatch() && this.inRange) { this.agarrar(); return; }
 
@@ -1407,6 +1444,12 @@ class Game {
     this.player.anim.update(dt);
     this.baby.anim.update(dt);
     this.endTimer -= dt;
+    if (this.endPhase === 0) {
+      // desliza até o colo e some devagar: o sprite do abraço já traz os dois,
+      // então sem isso ele "pula" para dentro dos braços de um quadro a outro
+      this.deslizarParaOColo(CFG.CATCH_GRAB_TIME, this.endTimer);
+      this.baby.alpha = clamp(this.endTimer / CFG.GRAB_FADE, 0, 1);
+    }
     if (this.endPhase === 0 && this.endTimer <= 0) {
       // abraço final: a animação já traz mãe e filho juntos
       this.endPhase = 1;
