@@ -1,0 +1,5 @@
+# o build roda em Linux: texto sempre com LF no repositório
+* text=auto eol=lf
+
+# arte não é texto, não mexe
+*.png binary

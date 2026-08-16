@@ -1,0 +1,7 @@
+# configuração local do Claude Code / servidor de teste
+.claude/
+
+# lixo de sistema
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2b1b3d">
+<title>Pega o Bebê!</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- ===== HUD ===== -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div id="hearts" class="hearts"></div>
+    </div>
+
+    <div class="hud-center">
+      <div id="roomName" class="room-name">Sala</div>
+      <div class="progress">
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+          <div class="marker marker-mom" id="markerMom" title="Mãe"></div>
+          <div class="marker marker-baby" id="markerBaby" title="Bebê"></div>
+        </div>
+        <div class="progress-legend">
+          <span><i class="dot dot-mom"></i>Mãe</span>
+          <span><i class="dot dot-baby"></i>Bebê</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-right">
+      <button id="btnPause" class="icon-btn" type="button" aria-label="Pausar">II</button>
+    </div>
+  </div>
+
+  <!-- ===== CONTROLES DE TOQUE ===== -->
+  <div id="touch" class="hidden">
+    <div class="pad pad-left">
+      <button class="tbtn" data-act="left" type="button" aria-label="Esquerda">&#9664;</button>
+      <button class="tbtn" data-act="right" type="button" aria-label="Direita">&#9654;</button>
+    </div>
+    <div class="pad pad-right">
+      <button class="tbtn tbtn-jump" data-act="jump" type="button" aria-label="Pular">PULAR</button>
+      <button class="tbtn tbtn-catch" id="btnCatch" data-act="catch" type="button" aria-label="Pegar">PEGAR</button>
+    </div>
+  </div>
+
+  <!-- ===== TELAS ===== -->
+  <div class="screen" id="scLoading">
+    <div class="panel">
+      <h1 class="title">Pega o Bebê!</h1>
+      <p class="sub">Aquecendo os pézinhos<span class="dots">...</span></p>
+      <div class="loadbar"><div id="loadFill"></div></div>
+      <p class="small" id="loadTxt">0%</p>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scError">
+    <div class="panel panel-error">
+      <h2 class="title small-title">Ops! Faltou alguma coisa</h2>
+      <p class="sub">Não consegui carregar estas imagens:</p>
+      <ul id="errList" class="err-list"></ul>
+      <p class="small">Confira se a pasta <b>img/</b> está junto do <b>index.html</b>.</p>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scStart">
+    <div class="panel">
+      <h1 class="title">Pega o Bebê!</h1>
+      <p class="sub">A fralda está suja e o bebê deu no pé!<br>Corra pela casa e pegue ele antes do quarto.</p>
+      <button class="big-btn" id="btnPlay" type="button">Jogar</button>
+      <div class="howto">
+        <div class="howto-col">
+          <b>No computador</b>
+          <span><kbd>A</kbd><kbd>D</kbd> ou <kbd>&#8592;</kbd><kbd>&#8594;</kbd> correr</span>
+          <span><kbd>Espaço</kbd> ou <kbd>&#8593;</kbd> pular</span>
+          <span><kbd>E</kbd> ou <kbd>Enter</kbd> pegar</span>
+          <span><kbd>P</kbd> pausar</span>
+        </div>
+        <div class="howto-col">
+          <b>No celular</b>
+          <span>Use os botões grandes na tela</span>
+          <span>Pule as bagunças do chão</span>
+          <span>Desvie dos brinquedos e fraldas</span>
+          <span>Aperte <b>PEGAR</b> quando ele estiver pertinho</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scPause">
+    <div class="panel">
+      <h2 class="title small-title">Pausa pra respirar</h2>
+      <p class="sub">O bebê também está descansando.</p>
+      <button class="big-btn" id="btnResume" type="button">Continuar</button>
+      <button class="ghost-btn" id="btnQuit" type="button">Voltar ao início</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scWin">
+    <div class="panel panel-win">
+      <h2 class="title">Peguei você!</h2>
+      <p class="sub" id="winTxt">A mãe pegou o bebê no colo. Hora da fralda limpa!</p>
+      <button class="big-btn" id="btnAgainWin" type="button">Jogar de novo</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scLose">
+    <div class="panel panel-lose">
+      <h2 class="title" id="loseTitle">O bebê escapou!</h2>
+      <p class="sub" id="loseTxt">Ele chegou no quarto rindo à toa. Bora tentar de novo?</p>
+      <button class="big-btn" id="btnAgainLose" type="button">Jogar de novo</button>
+    </div>
+  </div>
+</div>
+
+<div id="rotate" class="hidden">
+  <div class="rotate-box">
+    <div class="phone"></div>
+    <p>Gire o celular</p>
+    <span>O jogo fica bem melhor deitadinho :)</span>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
