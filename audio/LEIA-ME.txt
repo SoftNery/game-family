@@ -1,0 +1,58 @@
+VOZES DO JOGO
+=============
+
+É aqui que entram os áudios gravados pela família.
+
+Este arquivo existe por dois motivos: explicar a convenção e manter a pasta
+viva no repositório. O git não versiona pasta vazia, e o Dockerfile copia
+audio/ inteira — se a pasta sumir, o build no Dokploy quebra. Então não
+apague este LEIA-ME, mesmo que não haja nenhum áudio aqui.
+
+
+COMO ADICIONAR UM ÁUDIO
+-----------------------
+
+Batize o arquivo assim e jogue nesta pasta. Só isso, não precisa mexer em
+código nenhum:
+
+    <momento>-NN.<extensão>
+
+Exemplos:
+
+    pegada-01.m4a
+    pegada-02.m4a
+    vitoria-01.m4a
+    derrota-01.mp3
+
+
+MOMENTOS DISPONÍVEIS
+--------------------
+
+    inicio     começou a partida
+    pegada     a mãe segurou o bebê e ele ainda vai escapulir
+    dano       levou brinquedo na cabeça ou tropeçou
+    vitoria    a pegada final, o abraço
+    derrota    acabaram as vidas
+    fuga       o bebê completou o circuito da casa
+
+
+REGRAS
+------
+
+- Numere do 01 em diante, sem pular. O jogo procura em sequência e para no
+  primeiro que faltar; um 03 sem 02 é ignorado.
+
+- Vários arquivos no mesmo momento viram alternativas: o jogo sorteia uma a
+  cada vez, para não enjoar.
+
+- Formato: prefira .m4a ou .mp3. iPhone e iPad com iOS 16 ou anterior não
+  tocam .ogg — nesses o jogo segue sem a voz, sem quebrar.
+
+- Áudio curto funciona melhor. Acima de uns 5 segundos a fala atravessa
+  vários momentos do jogo.
+
+- Pode deixar a pasta sem nenhum áudio: o jogo roda igual, só com os sons
+  sintetizados.
+
+Para nome descritivo fora da convenção, declare na lista VOZES no topo do
+audio.js.
