@@ -81,6 +81,26 @@ body {
 .heart.off { color: rgba(255, 255, 255, .22); text-shadow: none; }
 .heart.pop { transform: scale(1.5) rotate(-12deg); }
 
+.catches-wrap { display: flex; align-items: center; gap: .5em; margin-top: .35em; }
+.catches-label {
+  font-size: .8em;
+  opacity: .85;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, .8);
+}
+.catches { display: flex; gap: .3em; }
+.catch-dot {
+  width: .85em;
+  height: .85em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .2);
+  border: 2px solid rgba(255, 255, 255, .55);
+}
+.catch-dot.on {
+  background: #57cc5a;
+  border-color: #eafff0;
+  box-shadow: 0 0 .5em rgba(87, 204, 90, .9);
+}
+
 .room-name {
   text-align: center;
   font-weight: bold;

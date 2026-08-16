@@ -1,8 +1,10 @@
 # Pega o Bebê!
 
 Jogo web de corrida lateral: a mãe precisa alcançar o filho, que está fugindo
-pela casa para não trocar a fralda. Passa por três cômodos — sala, corredor e
-quarto do bebê.
+pela casa para não trocar a fralda. A casa é um circuito — sala, corredor e
+quarto do bebê, repetindo — e o danado é escorregadio: **precisa ser pego 3
+vezes**. Nas duas primeiras ele se debate, escapole e dispara na frente um
+pouco mais rápido; só na terceira vem o colo de vez.
 
 HTML5 Canvas com **HTML, CSS e JavaScript puro**. Sem frameworks, sem
 bibliotecas externas, sem etapa de build.
@@ -23,7 +25,27 @@ paisagem); em pé aparece o aviso para girar.
 
 A mãe começa com 3 vidas. Tropeçar na bagunça do chão ou levar um brinquedo /
 fralda na cabeça custa uma vida. O botão **PEGAR** só funciona quando o bebê
-está ao alcance — aí aparece a seta "PEGA!" em cima dele.
+está ao alcance — aí aparece a seta "PEGA!" em cima dele. Cada pegada devolve
+os corações, então cada trecho da perseguição é um fôlego novo.
+
+Três finais: a mãe pega as 3 vezes, as vidas acabam (`mae-cansada`), ou o bebê
+completa o circuito (`filho-comemorando-fuga`).
+
+### Equilíbrio
+
+Duas ajudas invisíveis existem porque a vantagem de velocidade da mãe é
+pequena (~20%), e sem elas quem titubeia fica mais lento que o bebê e nunca
+mais encosta nele — terminando a partida sem uma pegada sequer:
+
+- **Ele enrola quando está longe:** olha para trás, vê a perseguição e afrouxa
+  o passo, proporcional à distância.
+- **Ele cansa:** depois de alguns segundos solto, vai perdendo o pique, e fica
+  mais desastrado (tropeça com mais frequência).
+
+Ambas só valem **enquanto a mãe está de fato correndo atrás**. Quem fica parado
+não ganha ajuda nenhuma — senão ficar parado viraria um impasse arrastado em
+vez de uma derrota. E quem joga bem pega o bebê antes dos 8 segundos, então
+nunca vê nada disso acontecer.
 
 ## Som
 

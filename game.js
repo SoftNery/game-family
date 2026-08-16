@@ -8,10 +8,11 @@
      3. AssetLoader . pré-carregamento das imagens
      4. FrameCache .. pré-renderiza cada quadro já no tamanho final
      5. Animation ... controle de sequências de quadros
-     6. Entidades ... Player (mãe), Baby (filho), Projectile, Obstacle
-     7. Input ....... teclado + botões de toque
-     8. Camera / Level
-     9. Game ........ máquina de estados, laço principal, HUD e telas
+     6. Effects ..... partículas, tremida de câmera, clarões
+     7. Entidades ... Player (mãe), Baby (filho), Projectile, Obstacle
+     8. Input ....... teclado + botões de toque
+     9. Camera
+    10. Game ........ máquina de estados, laço principal, HUD e telas
    ========================================================================== */
 'use strict';
 
@@ -36,11 +37,17 @@ const CFG = {
   JUMP_V: 880,
 
   // velocidades (a mãe é um pouco mais rápida que o filho)
-  MOM_SPEED: 330,
+  MOM_SPEED: 342,
   MOM_BACK_SPEED: 240,
   BABY_SPEED: 270,
-  BABY_FAR_SLOWDOWN: 0.9,    // alívio quando a mãe fica muito para trás
-  BABY_FAR_GAP: 820,
+  // Quando a mãe fica para trás, ele se distrai e afrouxa o passo — quanto
+  // maior a distância, mais ele enrola (é literalmente o que as animações de
+  // olhar para trás e rir mostram). Sem isso, quem titubeia fica mais lento
+  // que ele e nunca mais alcança, terminando a partida sem nenhuma pegada.
+  // Para quem joga colado não muda nada: nunca chega nessa distância.
+  BABY_FAR_GAP: 640,         // a partir daqui ele começa a enrolar
+  BABY_FAR_RANGE: 620,       // distância até a enrolação chegar no máximo
+  BABY_FAR_MAX_SLOW: 0.55,   // no pior caso ele anda a 45% da velocidade
 
   // escala dos desenhos: escala = UNIDADE / raiz(area do quadro)
   MOM_UNIT: 142,
@@ -50,15 +57,24 @@ const CFG = {
 
   // regras
   LIVES: 3,
-  CATCH_RANGE: 108,
+  CATCH_RANGE: 125,          // braço da mãe: generoso de propósito
+
+  // partida longa: ele se solta e a correria recomeça
+  LAPS: 2,                   // voltas pela casa (sala -> corredor -> quarto -> sala...)
+  CATCHES_NEEDED: 3,         // quantas vezes precisa pegar para vencer de vez
+  ESCAPE_GAP: 450,           // dianteira que ele ganha ao escapulir
+  ESCAPE_SPEEDUP: 1.03,      // fica um pouquinho mais rápido a cada fuga
+  GRAB_BEAT: 0.75,           // tempo preso no colo antes de escapar
+  ESCAPE_INVULN: 1.2,        // respiro para a mãe logo após a fuga
   MOM_START_X: 170,
-  BABY_START_X: 870,
+  BABY_START_X: 620,
   CAM_OFFSET: 0.26,          // posição da mãe na tela (fração da largura)
 
-  // penalidades
-  TRIP_TIME: 0.8,            // tropeço em obstáculo
-  HIT_TIME: 0.7,             // atingida por objeto
-  HIT_SLOW: 0.25,            // velocidade durante o atordoamento
+  // penalidades. O custo principal é a vida perdida; o tempo parada é curto
+  // de propósito, senão o bebê ganha o circuito só porque ela tropeçou
+  TRIP_TIME: 0.65,           // tropeço em obstáculo
+  HIT_TIME: 0.55,            // atingida por objeto
+  HIT_SLOW: 0.35,            // velocidade durante o atordoamento
   INVULN_TIME: 1.5,
 
   // projéteis
@@ -69,9 +85,11 @@ const CFG = {
   PROJ_SPIN: 7,
   PROJ_R: 26,                // raio de colisão
 
-  // obstáculos (a distância mínima garante que sempre dá para pular)
-  OBST_MIN_GAP: 400,
-  OBST_GAP_RAND: 230,
+  // obstáculos (a distância mínima garante que sempre dá para pular).
+  // O circuito tem 3 trechos: densidade que era justa numa corrida curta
+  // vira punição quando precisa ser sobrevivida três vezes seguidas.
+  OBST_MIN_GAP: 520,
+  OBST_GAP_RAND: 300,
   OBST_START_SAFE: 950,      // nada de obstáculo logo na largada
   OBST_END_SAFE: 320,
   OBST_HIT_W: 0.5,           // caixa de colisão menor que o desenho
@@ -82,10 +100,18 @@ const CFG = {
   MOM_BODY_H: 200,
 
   // comportamento do filho
-  BABY_ACT_MIN: 1.7,
-  BABY_ACT_MAX: 3.0,
+  BABY_ACT_MIN: 2.1,
+  BABY_ACT_MAX: 3.5,
   BABY_TRIP_COOLDOWN: 6.5,
   BABY_TRIP_FIRST: 3.5,      // espera antes do primeiro tropeço
+
+  // Ele também cansa. Sem isso a corrida trava: um jogador que titubeia fica
+  // com velocidade média abaixo da dele e NUNCA fecha os últimos metros, por
+  // mais que corra — termina a partida sem encostar no bebê uma vez sequer.
+  // Quem joga bem pega antes dos 11s e nunca vê esse mecanismo agir.
+  BABY_TIRE_AFTER: 8,       // segundos correndo sem ser pego
+  BABY_TIRE_RATE: 0.055,      // quanto do pique ele perde por segundo
+  BABY_TIRE_FLOOR: 0.58,     // não fica mais lento que isso
   BABY_THROW_RANGE: 760,     // só arremessa se a mãe estiver ao alcance
 
   // fim de jogo
@@ -99,8 +125,13 @@ const ROOMS = [
   { bg: 'cenario-corredor', name: 'Corredor' },
   { bg: 'cenario-quarto-bebe', name: 'Quarto do Bebê' },
 ];
-const WORLD_W = ROOM_W * ROOMS.length;
+/** A casa é um circuito: os cômodos se repetem a cada volta. */
+const ROOM_SLOTS = ROOMS.length * CFG.LAPS;
+const WORLD_W = ROOM_W * ROOM_SLOTS;
 const FINISH_X = WORLD_W - 260;
+const roomAt = (x) => ROOMS[clampIndex(Math.floor(x / ROOM_W)) % ROOMS.length];
+const lapAt = (x) => Math.min(CFG.LAPS, Math.floor(clampIndex(Math.floor(x / ROOM_W)) / ROOMS.length) + 1);
+function clampIndex(i) { return i < 0 ? 0 : i > ROOM_SLOTS - 1 ? ROOM_SLOTS - 1 : i; }
 const BG_TOP = CFG.GROUND_Y - CFG.BG_H * CFG.BG_GROUND_FRAC;
 
 /* ========================================================================== *
@@ -346,7 +377,188 @@ class Animation {
 }
 
 /* ========================================================================== *
- * 6. ENTIDADES
+ * 6. EFEITOS — partículas, tremida de câmera e flashes de tela
+ *    Tudo desenhado com formas do canvas; nenhuma imagem nova.
+ * ========================================================================== */
+const FX_CFG = {
+  POOL: 220,                 // reaproveita partículas, sem criar lixo por quadro
+  DUST_COLOR: '#f3e2c7',
+  STAR_COLOR: '#ffd166',
+  CONFETTI: ['#ff5470', '#4cc9f0', '#ffd166', '#57cc5a', '#ff8fa3'],
+  RUN_DUST_INTERVAL: 0.13,   // pufe de poeira a cada tanto, correndo no chão
+};
+
+class Particle {
+  constructor() { this.vida = 0; }
+
+  lancar(tipo, x, y, o) {
+    this.tipo = tipo;
+    this.x = x; this.y = y;
+    this.vx = o.vx || 0; this.vy = o.vy || 0;
+    this.grav = o.grav || 0;
+    this.arrasto = o.arrasto == null ? 1 : o.arrasto;
+    this.tam = o.tam || 6;
+    this.crescimento = o.crescimento || 0;
+    this.cor = o.cor || '#fff';
+    this.rot = o.rot || 0;
+    this.vrot = o.vrot || 0;
+    this.vidaMax = o.vida || 0.5;
+    this.vida = this.vidaMax;
+  }
+
+  update(dt) {
+    this.vida -= dt;
+    if (this.vida <= 0) return;
+    this.vy += this.grav * dt;
+    this.vx *= Math.pow(this.arrasto, dt * 60);
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.rot += this.vrot * dt;
+    this.tam += this.crescimento * dt;
+  }
+
+  draw(ctx) {
+    const k = Math.max(0, this.vida / this.vidaMax);
+    ctx.globalAlpha = this.tipo === 'poeira' ? k * 0.5 : k;
+    ctx.fillStyle = this.cor;
+    if (this.tipo === 'poeira' || this.tipo === 'faisca') {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, Math.max(0.5, this.tam), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (this.tipo === 'estrela') {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rot);
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const r = i % 2 === 0 ? this.tam : this.tam * 0.42;
+        const a = (i / 8) * Math.PI * 2;
+        const px = Math.cos(a) * r, py = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {   // confete
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rot);
+      ctx.fillRect(-this.tam / 2, -this.tam / 4, this.tam, this.tam / 2);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Effects {
+  constructor() {
+    this.pool = [];
+    for (let i = 0; i < FX_CFG.POOL; i++) this.pool.push(new Particle());
+    this.flash = 0;
+    this.flashMax = 1;
+    this.flashCor = '255,255,255';
+    this.runDust = 0;
+    this.pedidoTremor = 0;   // quem sacode não conhece a câmera; o Game repassa
+  }
+
+  reset() {
+    for (const p of this.pool) p.vida = 0;
+    this.flash = 0;
+    this.runDust = 0;
+    this.pedidoTremor = 0;
+  }
+
+  sacudir(forca) { this.pedidoTremor = Math.max(this.pedidoTremor, forca); }
+
+  livre() {
+    for (const p of this.pool) if (p.vida <= 0) return p;
+    return null;                       // pool cheia: descarta o excedente
+  }
+
+  emitir(tipo, x, y, o) {
+    const p = this.livre();
+    if (p) p.lancar(tipo, x, y, o);
+  }
+
+  /** Poeira sob os pés. */
+  poeira(x, y, n, forca) {
+    const f = forca || 1;
+    for (let i = 0; i < n; i++) {
+      this.emitir('poeira', x + rand(-12, 12), y + rand(-4, 2), {
+        vx: rand(-70, 30) * f, vy: rand(-45, -8) * f,
+        grav: 60, arrasto: 0.93,
+        tam: rand(4, 9), crescimento: rand(8, 22),
+        cor: FX_CFG.DUST_COLOR, vida: rand(0.28, 0.55),
+      });
+    }
+  }
+
+  /** Estrelinhas girando: pancada na cabeça. */
+  estrelas(x, y, n) {
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2);
+      this.emitir('estrela', x, y, {
+        vx: Math.cos(a) * rand(60, 190), vy: Math.sin(a) * rand(60, 170) - 60,
+        grav: 260, arrasto: 0.97,
+        tam: rand(7, 13), rot: rand(0, 6), vrot: rand(-9, 9),
+        cor: FX_CFG.STAR_COLOR, vida: rand(0.5, 0.9),
+      });
+    }
+  }
+
+  /** Faíscas rápidas: tropeço, impacto no chão. */
+  faiscas(x, y, n, cor) {
+    for (let i = 0; i < n; i++) {
+      const a = rand(-Math.PI, 0);
+      this.emitir('faisca', x, y, {
+        vx: Math.cos(a) * rand(50, 220), vy: Math.sin(a) * rand(60, 240),
+        grav: 700, arrasto: 0.98,
+        tam: rand(2, 5), cor: cor || FX_CFG.STAR_COLOR, vida: rand(0.3, 0.6),
+      });
+    }
+  }
+
+  /** Confete: pegou o bebê. */
+  confete(x, y, n) {
+    for (let i = 0; i < n; i++) {
+      this.emitir('confete', x + rand(-40, 40), y + rand(-30, 30), {
+        vx: rand(-220, 220), vy: rand(-380, -120),
+        grav: 620, arrasto: 0.99,
+        tam: rand(9, 16), rot: rand(0, 6), vrot: rand(-12, 12),
+        cor: pick(FX_CFG.CONFETTI), vida: rand(0.8, 1.4),
+      });
+    }
+  }
+
+  /** Clarão na tela inteira. */
+  clarao(cor, forca) {
+    this.flashCor = cor;
+    this.flashMax = forca;
+    this.flash = forca;
+  }
+
+  update(dt) {
+    for (const p of this.pool) if (p.vida > 0) p.update(dt);
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 1.9);
+  }
+
+  /** Partículas vivem no mundo, então desenham junto com a cena. */
+  draw(ctx) {
+    for (const p of this.pool) if (p.vida > 0) p.draw(ctx);
+  }
+
+  /** O clarão é de tela, desenhado depois de tudo. */
+  drawFlash(ctx) {
+    if (this.flash <= 0) return;
+    ctx.fillStyle = 'rgba(' + this.flashCor + ',' + (this.flash * 0.5).toFixed(3) + ')';
+    ctx.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
+  }
+}
+
+const effects = new Effects();
+
+/* ========================================================================== *
+ * 7. ENTIDADES
  * ========================================================================== */
 
 class Obstacle {
@@ -372,6 +584,7 @@ class Projectile {
     this.vy = CFG.PROJ_VY;
     this.key = key;
     this.angle = 0;
+    this.trail = 0;
     this.dead = false;
   }
   update(dt) {
@@ -379,6 +592,16 @@ class Projectile {
     this.y += this.vy * dt;
     this.vy += CFG.PROJ_G * dt;
     this.angle -= CFG.PROJ_SPIN * dt;
+    // rastro leve: ajuda a enxergar de onde o objeto está vindo
+    this.trail -= dt;
+    if (this.trail <= 0) {
+      this.trail = 0.045;
+      effects.emitir('poeira', this.x, this.y, {
+        vx: rand(-14, 14), vy: rand(-14, 14),
+        tam: rand(3, 6), crescimento: 10,
+        cor: '#ffe9b0', vida: rand(0.18, 0.3),
+      });
+    }
     if (this.y > CFG.GROUND_Y + 40 || this.x < -200) this.dead = true;
   }
   draw(ctx) { drawFrameSpun(ctx, this.key, this.x, this.y, this.angle); }
@@ -423,7 +646,16 @@ class Player {
     this.stunType = type;
     this.invuln = CFG.INVULN_TIME;
     this.anim.play(type, true);
-    if (type === 'trip') audio.tropeco(); else audio.pancada();
+    if (type === 'trip') {
+      audio.tropeco();
+      effects.poeira(this.x, CFG.GROUND_Y, 12, 1.6);
+      effects.faiscas(this.x, CFG.GROUND_Y - 20, 8, '#ffd166');
+    } else {
+      audio.pancada();
+      effects.estrelas(this.x, this.y - CFG.MOM_BODY_H, 7);
+    }
+    effects.clarao('255,90,110', 0.55);
+    effects.sacudir(type === 'trip' ? 11 : 8);
     // um tropeço interrompe o pulo
     if (type === 'trip') { this.y = CFG.GROUND_Y; this.vy = 0; this.onGround = true; }
     return true;
@@ -456,6 +688,7 @@ class Player {
       this.onGround = false;
       this.jumpT = 0;
       audio.pulo();
+      effects.poeira(this.x, CFG.GROUND_Y, 6, 1.1);
     }
     this.applyGravity(dt);
 
@@ -468,6 +701,12 @@ class Player {
       this.anim.frame = clamp(Math.floor((this.jumpT / airTime) * n), 0, n - 1);
     } else if (vx !== 0) {
       this.anim.play('run');
+      // poeirinha ritmada sob os pés, só correndo no chão
+      effects.runDust -= dt;
+      if (effects.runDust <= 0) {
+        effects.runDust = FX_CFG.RUN_DUST_INTERVAL;
+        effects.poeira(this.x - this.facing * 18, CFG.GROUND_Y, 2, 0.55);
+      }
     } else {
       this.anim.play('idle');
     }
@@ -479,7 +718,10 @@ class Player {
       this.vy += CFG.GRAVITY * dt;
       this.y += this.vy * dt;
       if (this.y >= CFG.GROUND_Y) {
-        if (this.vy > 200) audio.aterrissar();
+        if (this.vy > 200) {
+          audio.aterrissar();
+          effects.poeira(this.x, CFG.GROUND_Y, 8, 1.3);
+        }
         this.y = CFG.GROUND_Y; this.vy = 0; this.onGround = true;
       }
     }
@@ -505,11 +747,20 @@ class Baby {
     this.state = 'run';
     this.timer = rand(CFG.BABY_ACT_MIN, CFG.BABY_ACT_MAX);
     this.tripCooldown = CFG.BABY_TRIP_FIRST;
+    this.speedMul = 1;          // sobe a cada fuga
+    this.semSerPego = 0;        // tempo correndo solto, alimenta o cansaço
     this.released = false;
     this.anim = new Animation(BABY_ANIMS);
     this.anim.play('run');
     this.frozen = false;
     this.hidden = false;
+  }
+
+  /** Perna bamba: quanto mais tempo solto, menos pique ele tem. */
+  cansaco() {
+    const excedente = this.semSerPego - CFG.BABY_TIRE_AFTER;
+    if (excedente <= 0) return 1;
+    return Math.max(CFG.BABY_TIRE_FLOOR, 1 - excedente * CFG.BABY_TIRE_RATE);
   }
 
   /** Fator de velocidade conforme o que ele está fazendo agora. */
@@ -527,12 +778,16 @@ class Baby {
 
   startAction(momGap) {
     const roll = Math.random();
-    if (this.tripCooldown <= 0 && roll < 0.15) {
+    // quanto mais tempo ele corre solto, mais desastrado fica — é a chance
+    // que sobra para quem está tendo dificuldade de encostar nele
+    const chanceTropeco = this.semSerPego > CFG.BABY_TIRE_AFTER ? 0.42 : 0.15;
+    if (this.tripCooldown <= 0 && roll < chanceTropeco) {
       // tropeço raro: é a chance de ouro da mãe
       this.state = 'trip';
-      this.tripCooldown = CFG.BABY_TRIP_COOLDOWN;
+      this.tripCooldown = this.semSerPego > CFG.BABY_TIRE_AFTER
+        ? CFG.BABY_TRIP_COOLDOWN * 0.5 : CFG.BABY_TRIP_COOLDOWN;
       audio.tropecoBebe();
-    } else if (roll < 0.55 && momGap < CFG.BABY_THROW_RANGE) {
+    } else if (roll < 0.45 && momGap < CFG.BABY_THROW_RANGE) {
       this.state = Math.random() < 0.5 ? 'throwToy' : 'throwDiaper';
       this.released = false;
     } else {
@@ -543,15 +798,28 @@ class Baby {
     this.anim.play(this.state, true);
   }
 
-  update(dt, momX) {
+  update(dt, momX, perseguindo) {
     if (this.frozen) { this.anim.update(dt); return; }
 
     if (this.tripCooldown > 0) this.tripCooldown -= dt;
+    this.semSerPego += dt;
     const gap = this.x - momX;
 
-    // avança
-    let speed = CFG.BABY_SPEED * this.speedFactor();
-    if (gap > CFG.BABY_FAR_GAP) speed *= CFG.BABY_FAR_SLOWDOWN;
+    // Os freios do bebê (cansaço e enrolação) só valem enquanto a mãe está
+    // vindo atrás: ele olha para trás, vê a perseguição e afrouxa para tirar
+    // onda. Quem não corre não ganha essa ajuda — senão ficar parado viraria
+    // um impasse de minutos em vez de uma derrota.
+    // Entre os dois freios vale o mais forte, nunca o produto: multiplicados
+    // deixariam ele numa lentidão sem graça.
+    let freio = 1;
+    if (perseguindo) {
+      freio = this.cansaco();
+      if (gap > CFG.BABY_FAR_GAP) {
+        const excesso = Math.min(1, (gap - CFG.BABY_FAR_GAP) / CFG.BABY_FAR_RANGE);
+        freio = Math.min(freio, 1 - excesso * CFG.BABY_FAR_MAX_SLOW);
+      }
+    }
+    let speed = CFG.BABY_SPEED * this.speedFactor() * this.speedMul * freio;
     this.x += speed * dt;
 
     this.anim.update(dt);
@@ -590,7 +858,7 @@ class Baby {
 }
 
 /* ========================================================================== *
- * 7. INPUT — teclado e botões de toque
+ * 8. INPUT — teclado e botões de toque
  * ========================================================================== */
 class Input {
   constructor(game) {
@@ -679,19 +947,29 @@ class Input {
 }
 
 /* ========================================================================== *
- * 8. CÂMERA
+ * 9. CÂMERA
  * ========================================================================== */
 class Camera {
-  constructor() { this.x = 0; this.locked = false; }
-  reset() { this.x = 0; this.locked = false; }
+  constructor() { this.x = 0; this.locked = false; this.tremor = 0; }
+  reset() { this.x = 0; this.locked = false; this.tremor = 0; }
+
   follow(targetX) {
     if (this.locked) return;
     this.x = clamp(targetX - CFG.VIEW_W * CFG.CAM_OFFSET, 0, WORLD_W - CFG.VIEW_W);
   }
+
+  /** Sacode a tela. Impactos pedem o maior tremor pendente, não a soma. */
+  sacudir(forca) { this.tremor = Math.max(this.tremor, forca); }
+
+  update(dt) { this.tremor = Math.max(0, this.tremor - dt * 42); }
+
+  /** Deslocamento aplicado só no desenho, nunca na posição real. */
+  get offsetX() { return this.tremor ? rand(-this.tremor, this.tremor) : 0; }
+  get offsetY() { return this.tremor ? rand(-this.tremor, this.tremor) * 0.6 : 0; }
 }
 
 /* ========================================================================== *
- * 9. GAME
+ * 10. GAME
  * ========================================================================== */
 const STATE = {
   LOADING: 'loading',
@@ -699,9 +977,10 @@ const STATE = {
   MENU: 'menu',
   PLAY: 'play',
   PAUSE: 'pause',
-  END_CATCH: 'endCatch',     // a mãe pegou
+  GRABBED: 'grabbed',        // pegou, mas ele ainda vai escapulir
+  END_CATCH: 'endCatch',     // a mãe pegou de vez
   END_TIRED: 'endTired',     // acabaram as vidas
-  END_ESCAPE: 'endEscape',   // o filho chegou ao quarto
+  END_ESCAPE: 'endEscape',   // o filho chegou ao fim do circuito
 };
 
 class Game {
@@ -719,6 +998,8 @@ class Game {
     this.time = 0;
     this.endTimer = 0;
     this.endPhase = 0;
+    this.grabTimer = 0;
+    this.catches = 0;
     this.inRange = false;
     this.hud = {
       hearts: document.getElementById('hearts'),
@@ -726,6 +1007,7 @@ class Game {
       fill: document.getElementById('progressFill'),
       mom: document.getElementById('markerMom'),
       baby: document.getElementById('markerBaby'),
+      catches: document.getElementById('catches'),
       catchBtn: document.getElementById('btnCatch'),
     };
     this.hudCache = { lives: -1, room: -1, ready: null };
@@ -862,9 +1144,12 @@ class Game {
     this.projectiles = [];
     this.buildLevel();
     this.input.reset();
+    effects.reset();
     this.endTimer = 0;
     this.endPhase = 0;
-    this.hudCache = { lives: -1, room: -1, ready: null };
+    this.grabTimer = 0;
+    this.catches = 0;
+    this.hudCache = { lives: -1, room: -1, ready: null, catches: -1 };
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('touch').classList.remove('hidden');
     if (!this.input.touchUsed) document.getElementById('touch').classList.add('auto');
@@ -910,6 +1195,60 @@ class Game {
     audio.pararMusica();
   }
 
+  /**
+   * A mãe alcançou o bebê. Se ainda faltam pegadas, ele se debate e escapa;
+   * só na última é que vem o abraço de verdade.
+   */
+  agarrar() {
+    this.catches++;
+    effects.confete(this.baby.x, this.baby.y - 120, 22);
+    effects.clarao('255,255,255', 0.7);
+    this.camera.sacudir(7);
+    if (this.catches >= CFG.CATCHES_NEEDED) { this.endCatch(); return; }
+
+    this.state = STATE.GRABBED;
+    this.grabTimer = CFG.GRAB_BEAT;
+    this.inRange = false;
+    this.player.frozen = true;
+    this.player.anim.play('idle', true);
+    this.baby.frozen = true;
+    this.baby.anim.play('caught', true);
+    this.input.reset();
+    this.updateHud();
+    audio.pegadaParcial();
+  }
+
+  /** Ele escapole, dispara na frente e a correria recomeça. */
+  soltarBebe() {
+    const b = this.baby;
+    b.x = Math.min(this.player.x + CFG.ESCAPE_GAP, FINISH_X - 80);
+    b.speedMul *= CFG.ESCAPE_SPEEDUP;
+    b.semSerPego = 0;          // pegou: ele recupera o pique e o cansaço zera
+    b.frozen = false;
+    b.hidden = false;
+    b.backToRun();
+
+    // cada pegada é uma conquista: a mãe recupera o fôlego por inteiro.
+    // sem isso, 3 vidas para o circuito todo deixa o jogo punitivo demais
+    this.player.lives = CFG.LIVES;
+    this.player.frozen = false;
+    this.player.invuln = CFG.ESCAPE_INVULN;
+
+    effects.poeira(b.x, CFG.GROUND_Y, 10, 1.4);
+    this.state = STATE.PLAY;
+    this.last = performance.now();
+    this.updateHud();
+    audio.fuga();
+    audio.iniciarMusica();
+  }
+
+  updateGrabbed(dt) {
+    this.player.anim.update(dt);
+    this.baby.anim.update(dt);
+    this.grabTimer -= dt;
+    if (this.grabTimer <= 0) this.soltarBebe();
+  }
+
   endCatch() {
     this.freezeHud();
     this.state = STATE.END_CATCH;
@@ -950,17 +1289,21 @@ class Game {
 
   showWin() {
     document.getElementById('winTxt').textContent =
-      'A mãe pegou o bebê no colo bem antes do quarto. Agora sim: fralda limpa!';
+      'Ele escapuliu duas vezes, mas na terceira foi colo e pronto. Agora sim: fralda limpa!';
     this.showScreen('scWin');
   }
 
   showLose(reason) {
+    const feitas = this.catches;
+    const placar = feitas === 0
+      ? 'Dessa vez ele não deixou você encostar o dedo. '
+      : 'Você chegou a segurar ele ' + feitas + (feitas === 1 ? ' vez' : ' vezes') +
+        ', mas ele escapuliu. ';
     document.getElementById('loseTitle').textContent =
       reason === 'tired' ? 'A mãe cansou!' : 'O bebê escapou!';
-    document.getElementById('loseTxt').textContent =
-      reason === 'tired'
-        ? 'Foram tropeços demais pela casa e o fôlego acabou. O bebê seguiu solto por aí!'
-        : 'Ele chegou no quarto rindo à toa e ainda comemorou. Bora tentar de novo?';
+    document.getElementById('loseTxt').textContent = placar + (reason === 'tired'
+      ? 'Foram tropeços demais pela casa e o fôlego acabou. O danado seguiu solto por aí!'
+      : 'Ele completou a casa inteira rindo à toa e ainda comemorou. Bora tentar de novo?');
     this.showScreen('scLose');
   }
 
@@ -976,8 +1319,15 @@ class Game {
 
   update(dt) {
     this.time += dt;
+    effects.update(dt);        // partículas continuam vivas em qualquer estado
+    if (effects.pedidoTremor) {
+      this.camera.sacudir(effects.pedidoTremor);
+      effects.pedidoTremor = 0;
+    }
+    this.camera.update(dt);
     switch (this.state) {
       case STATE.PLAY: this.updatePlay(dt); break;
+      case STATE.GRABBED: this.updateGrabbed(dt); break;
       case STATE.END_CATCH: this.updateEndCatch(dt); break;
       case STATE.END_TIRED:
       case STATE.END_ESCAPE: this.updateEndSimple(dt); break;
@@ -995,7 +1345,8 @@ class Game {
     const b = this.baby;
 
     p.update(dt, this.input);
-    b.update(dt, p.x);
+    // "perseguindo" = ela está de fato correndo atrás dele agora
+    b.update(dt, p.x, this.input.right && p.stun <= 0 && !p.frozen);
 
     // limites do mundo: a mãe não ultrapassa o filho
     p.x = clamp(p.x, 40, Math.min(FINISH_X, b.x + 30));
@@ -1035,7 +1386,7 @@ class Game {
     const jaEstava = this.inRange;
     this.inRange = Math.abs(b.x - p.x) <= CFG.CATCH_RANGE && p.stun <= 0;
     if (this.inRange && !jaEstava) audio.aoAlcance();
-    if (this.input.consumeCatch() && this.inRange) { this.endCatch(); return; }
+    if (this.input.consumeCatch() && this.inRange) { this.agarrar(); return; }
 
     // ------- o filho chegou ao quarto? -------
     if (b.x >= FINISH_X - 1) { this.endEscape(); return; }
@@ -1067,7 +1418,7 @@ class Game {
     this.player.anim.update(dt);
     if (this.state === STATE.END_TIRED) {
       // o bebê continua fugindo enquanto a mãe recupera o fôlego
-      this.baby.update(dt, this.player.x);
+      this.baby.update(dt, this.player.x, false);   // a mãe já parou: ele corre solto
       this.baby.x = Math.min(this.baby.x, FINISH_X);
       this.camera.follow(this.player.x);
     } else {
@@ -1096,10 +1447,21 @@ class Game {
       }
     }
 
-    const room = clamp(Math.floor(this.player.x / ROOM_W), 0, ROOMS.length - 1);
-    if (this.hudCache.room !== room) {
-      this.hudCache.room = room;
-      h.room.textContent = ROOMS[room].name;
+    const slot = clamp(Math.floor(this.player.x / ROOM_W), 0, ROOM_SLOTS - 1);
+    if (this.hudCache.room !== slot) {
+      this.hudCache.room = slot;
+      h.room.textContent = roomAt(this.player.x).name +
+        (CFG.LAPS > 1 ? ' · Volta ' + lapAt(this.player.x) + '/' + CFG.LAPS : '');
+    }
+
+    if (this.hudCache.catches !== this.catches) {
+      this.hudCache.catches = this.catches;
+      h.catches.textContent = '';
+      for (let i = 0; i < CFG.CATCHES_NEEDED; i++) {
+        const s = document.createElement('span');
+        s.className = 'catch-dot' + (i < this.catches ? ' on' : '');
+        h.catches.appendChild(s);
+      }
     }
 
     const pm = clamp(this.player.x / FINISH_X, 0, 1);
@@ -1124,7 +1486,13 @@ class Game {
     ctx.imageSmoothingEnabled = true;
     ctx.clearRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
 
-    const cam = this.camera.x;
+    // a tremida entra só no desenho; a posição real da câmera não muda
+    const sx = this.camera.offsetX;
+    const sy = this.camera.offsetY;
+    const cam = this.camera.x - sx;
+
+    ctx.save();
+    ctx.translate(0, sy);
     this.drawBackground(ctx, cam);
 
     ctx.save();
@@ -1147,16 +1515,21 @@ class Game {
 
     for (const pr of this.projectiles) pr.draw(ctx);
 
+    effects.draw(ctx);   // partículas vivem no mundo, acompanham a câmera
+
     if (this.state === STATE.PLAY && this.inRange) this.drawCatchHint(ctx);
 
-    ctx.restore();
+    ctx.restore();   // fim do deslocamento de câmera
+    ctx.restore();   // fim da tremida vertical
+
+    effects.drawFlash(ctx);
   }
 
   drawBackground(ctx, cam) {
-    for (let i = 0; i < ROOMS.length; i++) {
+    for (let i = 0; i < ROOM_SLOTS; i++) {
       const sx = i * ROOM_W - cam;
       if (sx > CFG.VIEW_W || sx + ROOM_W < 0) continue;
-      const img = this.assets.get(ROOMS[i].bg);
+      const img = this.assets.get(ROOMS[i % ROOMS.length].bg);
       if (img) ctx.drawImage(img, sx, BG_TOP, ROOM_W, CFG.BG_H);
       // sombra suave na emenda entre cômodos
       if (i > 0) {

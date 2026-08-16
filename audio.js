@@ -207,6 +207,21 @@ class AudioKit {
     this.tom({ tipo: 'sine', de: nota(12, 1), dur: 0.14, ganho: 0.2, atraso: 0.09 });
   }
 
+  /** Segurou o bebê, mas ainda não é a vitória: toque curto de conquista. */
+  pegadaParcial() {
+    this.tom({ tipo: 'triangle', de: nota(4, 1), dur: 0.14, ganho: 0.26 });
+    this.tom({ tipo: 'triangle', de: nota(9, 1), dur: 0.2, ganho: 0.26, atraso: 0.1 });
+  }
+
+  /** Ele se soltou e disparou: escorregada + risadinha de escape. */
+  fuga() {
+    this.ruido({ dur: 0.22, tipoFiltro: 'bandpass', filtroDe: 900, filtroPara: 2600, q: 3, ganho: 0.18 });
+    [12, 14, 16].forEach((s, i) => this.tom({
+      tipo: 'square', de: nota(s, 1), para: nota(s + 3, 1),
+      dur: 0.09, ganho: 0.14, atraso: 0.1 + i * 0.07,
+    }));
+  }
+
   /** Pegou! Fanfarra maior ascendente. */
   vitoria() {
     [0, 4, 7, 12, 16].forEach((s, i) => this.tom({
