@@ -173,6 +173,9 @@ const BABY_LAUGH_SPEED = 0.92;
 /* ========================================================================== *
  * utilidades
  * ========================================================================== */
+/** Som do jogo. Fica solto de propósito: qualquer entidade chama direto. */
+const audio = new AudioKit();
+
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const rand = (a, b) => a + Math.random() * (b - a);
 const randInt = (a, b) => Math.floor(rand(a, b + 1));
@@ -420,6 +423,7 @@ class Player {
     this.stunType = type;
     this.invuln = CFG.INVULN_TIME;
     this.anim.play(type, true);
+    if (type === 'trip') audio.tropeco(); else audio.pancada();
     // um tropeço interrompe o pulo
     if (type === 'trip') { this.y = CFG.GROUND_Y; this.vy = 0; this.onGround = true; }
     return true;
@@ -451,6 +455,7 @@ class Player {
       this.vy = -CFG.JUMP_V;
       this.onGround = false;
       this.jumpT = 0;
+      audio.pulo();
     }
     this.applyGravity(dt);
 
@@ -473,7 +478,10 @@ class Player {
     if (!this.onGround) {
       this.vy += CFG.GRAVITY * dt;
       this.y += this.vy * dt;
-      if (this.y >= CFG.GROUND_Y) { this.y = CFG.GROUND_Y; this.vy = 0; this.onGround = true; }
+      if (this.y >= CFG.GROUND_Y) {
+        if (this.vy > 200) audio.aterrissar();
+        this.y = CFG.GROUND_Y; this.vy = 0; this.onGround = true;
+      }
     }
   }
 
@@ -523,12 +531,14 @@ class Baby {
       // tropeço raro: é a chance de ouro da mãe
       this.state = 'trip';
       this.tripCooldown = CFG.BABY_TRIP_COOLDOWN;
+      audio.tropecoBebe();
     } else if (roll < 0.55 && momGap < CFG.BABY_THROW_RANGE) {
       this.state = Math.random() < 0.5 ? 'throwToy' : 'throwDiaper';
       this.released = false;
     } else {
       this.state = 'laugh';
       this.timer = rand(0.9, 1.5);
+      audio.molecagem();
     }
     this.anim.play(this.state, true);
   }
@@ -552,6 +562,7 @@ class Baby {
       this.released = true;
       const key = this.state === 'throwToy' ? 'projetil-brinquedo' : 'projetil-fralda';
       this.game.projectiles.push(new Projectile(this.x - 30, CFG.GROUND_Y - 120, key));
+      audio.arremesso();
     }
 
     // troca de comportamento
@@ -769,6 +780,17 @@ class Game {
     on('btnResume', () => this.togglePause());
     on('btnQuit', () => this.toMenu());
 
+    // ------- som -------
+    const btnMute = document.getElementById('btnMute');
+    const pintarMute = () => btnMute.classList.toggle('off', audio.muted);
+    on('btnMute', () => { audio.unlock(); audio.toggleMute(); pintarMute(); });
+    pintarMute();
+
+    // o navegador só libera áudio depois de um gesto do usuário
+    const liberar = () => audio.unlock();
+    window.addEventListener('pointerdown', liberar, { passive: true });
+    window.addEventListener('keydown', liberar, { passive: true });
+
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === STATE.PLAY) this.togglePause();
     });
@@ -849,6 +871,8 @@ class Game {
     this.showScreen(null);
     this.state = STATE.PLAY;
     this.last = performance.now();
+    audio.unlock();
+    audio.iniciarMusica();
   }
 
   toMenu() {
@@ -858,6 +882,7 @@ class Game {
     this.baby.anim.play('idle');
     this.camera.reset();
     this.projectiles = [];
+    audio.pararMusica();
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('touch').classList.add('hidden');
     this.showScreen('scStart');
@@ -868,10 +893,13 @@ class Game {
       this.state = STATE.PAUSE;
       this.input.reset();
       this.showScreen('scPause');
+      audio.pararMusica();
     } else if (this.state === STATE.PAUSE) {
       this.state = STATE.PLAY;
       this.showScreen(null);
       this.last = performance.now();
+      audio.resume();
+      audio.iniciarMusica();
     }
   }
 
@@ -879,6 +907,7 @@ class Game {
   freezeHud() {
     this.inRange = false;
     this.updateHud();
+    audio.pararMusica();
   }
 
   endCatch() {
@@ -892,6 +921,7 @@ class Game {
     this.baby.frozen = true;
     this.baby.anim.play('caught', true);
     this.input.reset();
+    audio.vitoria();
   }
 
   endTired() {
@@ -902,6 +932,7 @@ class Game {
     this.player.stun = 0;
     this.player.anim.play('tired', true);
     this.input.reset();
+    audio.derrota();
   }
 
   endEscape() {
@@ -914,6 +945,7 @@ class Game {
     this.player.anim.play('idle', true);
     this.camera.locked = true;
     this.input.reset();
+    audio.derrota();
   }
 
   showWin() {
@@ -1000,7 +1032,9 @@ class Game {
     this.projectiles = this.projectiles.filter((pr) => !pr.dead);
 
     // ------- pegar -------
+    const jaEstava = this.inRange;
     this.inRange = Math.abs(b.x - p.x) <= CFG.CATCH_RANGE && p.stun <= 0;
+    if (this.inRange && !jaEstava) audio.aoAlcance();
     if (this.input.consumeCatch() && this.inRange) { this.endCatch(); return; }
 
     // ------- o filho chegou ao quarto? -------

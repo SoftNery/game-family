@@ -6,7 +6,7 @@ FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # arquivos do jogo
-COPY index.html style.css game.js /usr/share/nginx/html/
+COPY index.html style.css game.js audio.js /usr/share/nginx/html/
 COPY img/ /usr/share/nginx/html/img/
 
 EXPOSE 80

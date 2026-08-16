@@ -68,6 +68,8 @@ body {
 }
 
 .hud-left, .hud-right { flex: 0 0 auto; }
+.hud-right { display: flex; gap: .4em; }
+.icon-btn.off { opacity: .45; text-decoration: line-through; }
 .hud-center { flex: 1 1 auto; max-width: 44%; }
 
 .hearts { display: flex; gap: .35em; font-size: 2.4em; line-height: 1; }

@@ -25,6 +25,21 @@ A mãe começa com 3 vidas. Tropeçar na bagunça do chão ou levar um brinquedo
 fralda na cabeça custa uma vida. O botão **PEGAR** só funciona quando o bebê
 está ao alcance — aí aparece a seta "PEGA!" em cima dele.
 
+## Som
+
+Não há nenhum arquivo de áudio no projeto. Efeitos e música são **gerados na
+hora** pela Web Audio API (osciladores, ruído e envelopes de ganho), o que
+mantém a regra de não usar bibliotecas nem assets externos e não pesa no
+carregamento.
+
+O botão ♪ no HUD liga e desliga o som, e a preferência fica salva no
+`localStorage`. O navegador só libera áudio depois de um gesto do usuário, então
+o contexto é criado no primeiro clique, toque ou tecla.
+
+A "risada" do bebê é um motivo saltitante de propósito: síntese simples não
+imita voz humana sem soar robótica, então ela virou um efeito de molecagem em
+vez de uma voz falsa.
+
 ## Rodando na sua máquina
 
 Qualquer servidor estático serve:
@@ -67,6 +82,7 @@ ficou de fora de propósito.
 index.html    canvas, HUD, botões de toque e as 8 telas
 style.css     moldura 16:9, HUD, controles e telas
 game.js       motor completo (assets, animação, física, câmera, estados)
+audio.js      síntese dos efeitos e da música (Web Audio API, sem arquivos)
 img/          86 PNGs (cenários, mãe, filho, obstáculos, projéteis)
 Dockerfile    imagem nginx com os arquivos estáticos
 nginx.conf    cache e gzip
