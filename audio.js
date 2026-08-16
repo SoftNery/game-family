@@ -37,6 +37,31 @@ const AUDIO_CFG = {
      'derrota' — acabaram as vidas
      'fuga'    — o bebê completou o circuito
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   DESCOBERTA AUTOMÁTICA — arquivo com nome no padrão entra sozinho.
+
+   Batize o arquivo como <momento>-NN.<extensão> e jogue em audio/. Pronto:
+   não precisa mexer em código nenhum.
+
+       audio/pegada-01.m4a      audio/derrota-01.mp3
+       audio/pegada-02.m4a      audio/vitoria-01.ogg
+
+   O jogo procura do 01 em diante e para no primeiro que não achar, então
+   numere sem pular. Vários arquivos no mesmo momento = ele sorteia entre eles.
+
+   Isso custa algumas requisições que voltam 404 no carregamento (é assim que
+   ele descobre onde a numeração termina). São inofensivas; se incomodarem,
+   basta ativo: false e usar a lista VOZES logo abaixo.
+--------------------------------------------------------------------------- */
+const VOZ_AUTO = {
+  ativo: true,
+  momentos: ['inicio', 'pegada', 'dano', 'vitoria', 'derrota', 'fuga'],
+  extensoes: ['.m4a', '.mp3', '.ogg'],
+  maxPorMomento: 8,
+  padrao: { chance: 1, cooldown: 9, volume: 1 },
+};
+
+/* Lista explícita: para arquivos com nome descritivo, fora da convenção. */
 const VOZES = [
   {
     id: 'reclamando',
@@ -119,6 +144,50 @@ class AudioKit {
       tentarProximo();
       this.vozes.push(reg);
     }
+
+    if (VOZ_AUTO.ativo) {
+      for (const momento of VOZ_AUTO.momentos) this.sondar(momento, 1);
+    }
+  }
+
+  /** Extensões que este navegador sabe tocar, na ordem de preferência. */
+  extensoesSuportadas() {
+    const teste = document.createElement('audio');
+    const tipo = { '.m4a': 'audio/mp4; codecs=mp4a.40.2', '.mp3': 'audio/mpeg',
+                   '.ogg': 'audio/ogg; codecs=opus', '.wav': 'audio/wav' };
+    return VOZ_AUTO.extensoes.filter((e) => !teste.canPlayType || teste.canPlayType(tipo[e]));
+  }
+
+  /**
+   * Procura audio/<momento>-NN.<ext>. Achou, registra e vai para o próximo
+   * número; não achou em nenhuma extensão, para de procurar esse momento.
+   * Usa <audio> em vez de fetch para continuar funcionando em file://.
+   */
+  sondar(momento, n) {
+    if (n > VOZ_AUTO.maxPorMomento) return;
+    const exts = this.extensoesSuportadas();
+    if (!exts.length) return;
+    const base = 'audio/' + momento + '-' + String(n).padStart(2, '0');
+    const el = new Audio();
+    el.preload = 'auto';
+    let i = 0;
+    let registrado = false;
+
+    const tentar = () => {
+      if (registrado || i >= exts.length) return;   // acabou a numeração aqui
+      el.src = base + exts[i++];
+      el.load();
+    };
+    el.addEventListener('canplaythrough', () => {
+      if (registrado) return;
+      registrado = true;
+      const def = Object.assign({ id: base, evento: momento }, VOZ_AUTO.padrao);
+      el.addEventListener('ended', () => this.encerrarVoz(el));
+      this.vozes.push({ def: def, el: el, ultimaVez: -999, falhou: false, idx: i });
+      this.sondar(momento, n + 1);                  // pode haver mais um
+    });
+    el.addEventListener('error', () => { this.encerrarVoz(el); tentar(); });
+    tentar();
   }
 
   /** Relógio próprio, para o cooldown não depender de quem chama. */

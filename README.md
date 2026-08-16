@@ -67,18 +67,33 @@ vez de uma voz falsa.
 Além da síntese, o jogo toca clipes gravados de verdade. Ficam em `audio/` e
 são declarados na lista `VOZES`, no topo do [audio.js](audio.js).
 
-**Para adicionar um clipe novo:** jogue o arquivo em `audio/` e escreva uma
-linha na lista, dizendo em que momento ele entra. O `Dockerfile` copia a pasta
-inteira, então não precisa mexer em nada do deploy.
-
-```js
-{ id: 'bronca', arquivo: 'audio/nome-do-arquivo.m4a',
-  evento: 'derrota', chance: 1, cooldown: 9, volume: 1 },
-```
-
 Momentos disponíveis (todos já chamados pelo jogo, basta ter clipe):
 `inicio`, `pegada`, `dano`, `vitoria`, `derrota`, `fuga`. Se houver mais de um
 clipe para o mesmo momento, o jogo sorteia entre eles.
+
+**Jeito fácil — só o nome do arquivo.** Batize como `<momento>-NN.<extensão>`,
+jogue em `audio/` e acabou; não precisa mexer em código nenhum:
+
+```
+audio/pegada-01.m4a      audio/vitoria-01.m4a
+audio/pegada-02.m4a      audio/derrota-01.mp3
+```
+
+O jogo procura do `01` em diante e para no primeiro que faltar, então numere
+sem pular. Ele descobre isso fazendo algumas requisições que voltam 404 no
+carregamento — inofensivas, mas aparecem no console do navegador. Para
+desligar, `VOZ_AUTO.ativo = false`.
+
+**Jeito explícito — nome descritivo.** Se preferir manter um nome que diga o
+que é, declare na lista `VOZES`:
+
+```js
+{ id: 'bronca', arquivo: 'audio/mae-brigando.m4a',
+  evento: 'derrota', chance: 1, cooldown: 9, volume: 1 },
+```
+
+O `Dockerfile` copia a pasta `audio/` inteira nos dois casos, então clipe novo
+nunca exige mexer no deploy.
 
 Enquanto alguém fala, a música abaixa sozinha, e duas falas nunca se
 atropelam. O botão de mudo cala as vozes junto.
