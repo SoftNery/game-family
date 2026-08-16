@@ -7,6 +7,21 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # arquivos do jogo
 COPY index.html style.css game.js audio.js /usr/share/nginx/html/
+
+# Carimba o hash do conteúdo na referência de cada arquivo dentro do HTML:
+#   <script src="game.js">  ->  <script src="game.js?v=05e0a30b">
+# Deploy com mudança = URL nova = navegador obrigado a baixar de novo, sem
+# depender de revalidação de cache, que proxy ou CDN no meio do caminho pode
+# furar. Arquivo que não mudou mantém a mesma URL e segue vindo do cache.
+# É idempotente: rodar de novo não duplica, porque o padrão inclui a aspa.
+RUN cd /usr/share/nginx/html && \
+    for f in style.css audio.js game.js; do \
+      h=$(md5sum "$f" | cut -c1-8); \
+      sed -i "s|\"$f\"|\"$f?v=$h\"|g" index.html; \
+    done && \
+    echo "--- referências versionadas ---" && \
+    grep -E 'href="style|src="(game|audio)' index.html
+
 COPY img/ /usr/share/nginx/html/img/
 # pasta inteira: clipes novos entram no deploy sem mexer aqui
 COPY audio/ /usr/share/nginx/html/audio/

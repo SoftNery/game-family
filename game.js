@@ -211,6 +211,17 @@ const BABY_LAUGH_SPEED = 0.92;
 /* ========================================================================== *
  * utilidades
  * ========================================================================== */
+/**
+ * Versão do que está rodando: o build carimba ?v=<hash> na tag do script,
+ * então dá para olhar a tela inicial e saber se o deploy pegou mesmo.
+ * Aberto local, sem carimbo, mostra "local".
+ */
+const VERSAO = (function () {
+  const s = document.currentScript;
+  const m = s && s.src && s.src.match(/[?&]v=([A-Za-z0-9]+)/);
+  return m ? m[1] : 'local';
+})();
+
 /** Som do jogo. Fica solto de propósito: qualquer entidade chama direto. */
 const audio = new AudioKit();
 
@@ -1033,6 +1044,8 @@ class Game {
       catchBtn: document.getElementById('btnCatch'),
     };
     this.hudCache = { lives: -1, room: -1, ready: null };
+    const selo = document.getElementById('versao');
+    if (selo) selo.textContent = VERSAO;
     this.setupUI();
     this.setupCanvas();
   }

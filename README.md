@@ -131,6 +131,26 @@ O projeto sobe como **site estático servido por nginx**.
 
 Não precisa de variável de ambiente nenhuma.
 
+### Cache: por que o deploy sempre aparece
+
+O build carimba o hash do conteúdo na referência de cada script dentro do
+`index.html`:
+
+```html
+<script src="game.js?v=05e0a30b"></script>
+```
+
+Mudou o arquivo, muda o hash, muda a URL — e o navegador é obrigado a baixar
+de novo. Não depende de revalidação de cache, que é justamente o que proxy e
+CDN no meio do caminho costumam furar. Arquivo que não mudou mantém a URL e
+continua vindo do cache.
+
+O carimbo acontece só dentro da imagem Docker. Rodando local os arquivos ficam
+sem `?v=`, então nada muda no dia a dia.
+
+A tela inicial mostra o hash no rodapé (`versão 05e0a30b`), então dá para
+bater o olho e saber se o deploy pegou. Abrindo local aparece `versão local`.
+
 ### Sobre performance
 
 São ~23 MB de PNG (só os três cenários somam 4,4 MB). O `nginx.conf` já manda
